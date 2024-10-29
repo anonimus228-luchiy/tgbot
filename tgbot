@@ -1,0 +1,89 @@
+import random
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.ext import Updater, CommandHandler, CallbackQueryHandler, CallbackContext
+
+games = {}
+
+def create_board():
+    return [" " for _ in range(9)]
+
+def check_winner(board, player):
+    win_conditions = [
+        [0, 1, 2], [3, 4, 5], [6, 7, 8],
+        [0, 3, 6], [1, 4, 7], [2, 5, 8],
+        [0, 4, 8], [2, 4, 6]
+    ]
+    for condition in win_conditions:
+        if board[condition[0]] == board[condition[1]] == board[condition[2]] == player:
+            return True
+    return False
+
+def render_board(board):
+    keyboard = []
+    for i in range(0, 9, 3):
+        row = [
+            InlineKeyboardButton(board[i + j], callback_data=str(i + j)) for j in range(3)
+        ]
+        keyboard.append(row)
+    return InlineKeyboardMarkup(keyboard)
+
+def start(update: Update, context: CallbackContext):
+    chat_id = update.message.chat_id
+    games[chat_id] = {
+        "board": create_board(),
+        "current_player": "X"  # Игра всегда начинается с крестика
+    }
+    update.message.reply_text("Игра 'Крестики-нолики' началась! Ты играешь за 'X'.", reply_markup=render_board(games[chat_id]["board"]))
+
+def button_click(update: Update, context: CallbackContext):
+    query = update.callback_query
+    query.answer()
+    chat_id = query.message.chat_id
+
+    game = games.get(chat_id)
+    if not game:
+        query.message.reply_text("Игра не найдена. Начни новую игру командой /start.")
+        return
+
+    board = game["board"]
+    current_player = game["current_player"]
+    move = int(query.data)
+
+    if board[move] != " ":
+        query.answer("Эта ячейка уже занята!")
+        return
+
+    board[move] = current_player
+
+    if check_winner(board, current_player):
+        query.edit_message_text(
+            f"Игрок '{current_player}' выиграл!", reply_markup=render_board(board)
+        )
+        del games[chat_id]
+        return
+
+    if " " not in board:
+        query.edit_message_text("Ничья!", reply_markup=render_board(board))
+        del games[chat_id]
+        return
+
+    game["current_player"] = "O" if current_player == "X" else "X"
+    query.edit_message_text(
+        f"Ход игрока '{game['current_player']}'", reply_markup=render_board(board)
+    )
+
+TOKEN = "7707593992:AAEkRFUQmbyVAInDDfuip-kywnZMqnYEWMA"
+updater = Updater(TOKEN, use_context=True)
+dp = updater.dispatcher
+
+dp.add_handler(CommandHandler("start", start))
+dp.add_handler(CallbackQueryHandler(button_click))
+
+def error(update, context):
+    print(f"Update {update} caused error {context.error}")
+
+dp.add_error_handler(error)
+
+print("Бот запущен!")
+updater.start_polling()
+updater.idle()
